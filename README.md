@@ -2,7 +2,7 @@
 
 I like to organize my palettes in two dimensions, so I can keep track of color ramps. This plug-in places an additional view of the current palette below the standard one, when the palette is loaded from an image. You can choose a color from any of the already available methods, or directly from the custom palette. Like the standard palette, the current color is indicated in this palette as well.
 
-This view is still designed for loading palettes where each color is represented by a single pixel, so there may be limits to loading large files. Each pixel is drawn as a cell between 4 and 32 px wide. The view starts at about 320 px on its longest side, so an image wider or taller than about 80 pixels gives cells too small to click comfortably. Indexed sprites hold at most 256 colors, so an image with more unique colors than that can't replace an indexed sprite's palette (it can still be shown and picked from).
+This view is still designed for loading palettes where each color is represented by a single pixel, so there may be limits to loading large files. Each pixel is drawn as a cell between 4 and 32 px wide. The view starts a little under 320 px on its longest side, so an image wider or taller than about 40 pixels starts at the 4 px minimum, which is hard to click (press + to enlarge). Indexed sprites hold at most 256 colors, so an image with more unique colors than that can't replace an indexed sprite's palette (it can still be shown and picked from).
 
 Fully transparent pixels are left as empty cells, so you can use them to space out ramps.
 

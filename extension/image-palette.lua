@@ -3,7 +3,9 @@
 
 local MIN_CELL = 4
 local MAX_CELL = 32
-local DEFAULT_MAX_VIEW = 320 -- target size (px) of the longest side of the grid
+local DEFAULT_MAX_VIEW = 320 -- fit the longest side of the grid to this (px)...
+local DEFAULT_SHRINK = 4      -- ...then shrink cells by this, like pressing "-" twice
+local CELL_STEP = 2           -- cell size change per "-" / "+" press
 local MAX_INDEXED_COLORS = 256
 
 local plugin_ -- set in init()
@@ -116,8 +118,8 @@ end
 
 local function defaultCellSize(grid)
   local longest = math.max(grid.width, grid.height)
-  local size = math.floor(DEFAULT_MAX_VIEW / longest)
-  return math.max(MIN_CELL, math.min(MAX_CELL, size))
+  local size = math.min(MAX_CELL, math.floor(DEFAULT_MAX_VIEW / longest))
+  return math.max(MIN_CELL, size - DEFAULT_SHRINK)
 end
 
 local function cellSize()
@@ -298,8 +300,8 @@ openView = function(grid)
   }
   dlg:newrow()
   dlg:label{ id = "info", text = "" }
-  dlg:button{ text = "-", onclick = function() setCellSize(cs - 2) end }
-  dlg:button{ text = "+", onclick = function() setCellSize(cs + 2) end }
+  dlg:button{ text = "-", onclick = function() setCellSize(cs - CELL_STEP) end }
+  dlg:button{ text = "+", onclick = function() setCellSize(cs + CELL_STEP) end }
   view.dlg = dlg
 
   view.listeners = {
