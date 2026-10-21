@@ -2,7 +2,7 @@
   "name": "image-palette",
   "displayName": "Image Palette",
   "description": "Shows a palette loaded from an image as a 2D grid, keeping the layout of your color ramps.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "author": {
     "name": "Jonathan Gabel"
   },

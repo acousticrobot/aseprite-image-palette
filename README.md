@@ -21,9 +21,23 @@ Requires Aseprite 1.3 or later.
 ## To use
 
 1. Open the palette options menu (the ☰ button above the palette) and choose **Load Palette from Image (2D)...**.
-2. Pick an image where each pixel is one palette color (`examples/ramps.png` is a small sample). Leave **Replace the sprite's palette** checked to also load the colors into the standard palette, in reading order (left to right, top to bottom, duplicates and transparent pixels skipped).
+2. Pick an image where each pixel is one palette color (`examples/example-1.png` is a small sample). Leave **Replace the current palette** checked to also load the colors into the standard palette. Duplicate colors are only added once.
+   - **Order**: *Reading order* adds colors left to right, top to bottom. *Aseprite default* uses the same order as Aseprite's own **Load Palette** (its color quantization).
+   - **Include transparent color**: when the image has transparent pixels, adds a transparent entry at index 0, as Aseprite's **Load Palette** does. Uncheck it to keep transparent pixels purely for layout. (Aseprite's **Load Palette** adds the transparent entry even to images with no transparent pixels; this plugin only adds it when the image has some.)
 3. The Image Palette window opens under the color bar. Drag it wherever you like; it reopens in the same place.
    - **Left-click** a cell to set the foreground color, **right-click** to set the background color.
    - The current foreground color is marked with a triangle in the top-left corner of its cell and the background color in the bottom-right, like the standard palette. The markers update however the color was picked.
    - Hover a cell to see its hex value and position. Use **-** / **+** to change the cell size.
 4. **Show/Hide Image Palette** in the same menu toggles the window and reloads the last image (it's read again from disk, so edits to the image show up).
+
+
+### Roadmap
+
+- [x] Adjust the default palette size so that it is only as wide as the current palette area.
+- [x] Load colors in the same order as the default palette
+- [ ] Only indicate the first instance of a color as selected (too noisy for loading an image as a palette to show all)
+- [ ] Should we have one palette window per open file?
+- [x] Include transparent pixels if they exist
+- [ ] Limit loading images to a reasonable size
+
+

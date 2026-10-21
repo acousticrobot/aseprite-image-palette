@@ -8,9 +8,13 @@ local DEFAULT_SHRINK = 4      -- ...then shrink cells by this, like pressing "-"
 local CELL_STEP = 2           -- cell size change per "-" / "+" press
 local MAX_INDEXED_COLORS = 256
 
+-- Palette order options when replacing the current palette.
+local ORDER_READING = "Reading order (left to right, top to bottom)"
+local ORDER_DEFAULT = "Aseprite default (same as Load Palette)"
+
 local plugin_ -- set in init()
 local view = {
-  grid = nil,       -- { width, height, path, cells[y][x] = Color or false }
+  grid = nil,       -- { width, height, path, hasTransparent, cells[y][x] = Color or false }
   dlg = nil,
   listeners = {},
   hover = nil,      -- { x, y } of the cell under the mouse
@@ -37,7 +41,7 @@ end
 -- transparent pixels become empty cells, which lets gaps separate ramps.
 local function loadGrid(path)
   if not path or not app.fs.isFile(path) then
-    return nil, "File not found: " .. path
+    return nil, "File not found: " .. tostring(path)
   end
 
   local previous = app.sprite
@@ -54,6 +58,7 @@ local function loadGrid(path)
 
   local pc = app.pixelColor
   local cells = {}
+  local hasTransparent = false
   for y = 0, img.height - 1 do
     local row = {}
     for x = 0, img.width - 1 do
@@ -61,6 +66,7 @@ local function loadGrid(path)
       local a = pc.rgbaA(v)
       if a == 0 then
         row[x + 1] = false
+        hasTransparent = true
       else
         row[x + 1] = Color{ r = pc.rgbaR(v), g = pc.rgbaG(v), b = pc.rgbaB(v), a = a }
       end
@@ -68,7 +74,13 @@ local function loadGrid(path)
     cells[y + 1] = row
   end
 
-  return { width = img.width, height = img.height, path = path, cells = cells }
+  return {
+    width = img.width,
+    height = img.height,
+    path = path,
+    hasTransparent = hasTransparent,
+    cells = cells,
+  }
 end
 
 -- Unique colors of the grid in reading order (left-to-right, top-to-bottom).
@@ -89,11 +101,39 @@ local function uniqueColors(grid)
   return list
 end
 
-local function applyPalette(spr, grid)
-  local colors = uniqueColors(grid)
+local TRANSPARENT = Color{ r = 0, g = 0, b = 0, a = 0 }
+
+-- Colors in the order Aseprite's own Load Palette uses (color quantization of
+-- the image, which always puts a transparent entry at index 0).
+local function defaultOrderColors(grid)
+  local pal = Palette{ fromFile = grid.path }
+  if not pal then return nil end
+  local list = {}
+  for i = 0, #pal - 1 do
+    local c = pal:getColor(i)
+    if c.alpha > 0 then list[#list + 1] = c end
+  end
+  return list
+end
+
+-- options: { order = ORDER_*, includeTransparent = bool }
+local function applyPalette(spr, grid, options)
+  local colors
+  if options.order == ORDER_DEFAULT then
+    colors = defaultOrderColors(grid)
+    if not colors then
+      app.alert("Aseprite could not load a palette from this image.")
+      return false
+    end
+  else
+    colors = uniqueColors(grid)
+  end
   if #colors == 0 then
     app.alert("The image has no opaque pixels.")
     return false
+  end
+  if options.includeTransparent and grid.hasTransparent then
+    table.insert(colors, 1, TRANSPARENT)
   end
   if spr.colorMode == ColorMode.INDEXED and #colors > MAX_INDEXED_COLORS then
     app.alert{
@@ -340,10 +380,29 @@ local function loadCommand()
     filename = plugin_.preferences.lastPath or "",
     filetypes = { "png", "gif", "bmp", "aseprite", "ase", "jpg", "jpeg", "webp", "tga", "pcx" },
   }
+  local prefs = plugin_.preferences
+  local function setOptionsEnabled(enabled)
+    dlg:modify{ id = "order", enabled = enabled }
+    dlg:modify{ id = "transparent", enabled = enabled }
+  end
   dlg:check{
     id = "apply",
     text = "Replace the current palette with these colors",
     selected = spr ~= nil,
+    enabled = spr ~= nil,
+    onclick = function() setOptionsEnabled(dlg.data.apply) end,
+  }
+  dlg:combobox{
+    id = "order",
+    label = "Order",
+    option = prefs.order or ORDER_READING,
+    options = { ORDER_READING, ORDER_DEFAULT },
+    enabled = spr ~= nil,
+  }
+  dlg:check{
+    id = "transparent",
+    text = "Include transparent color at index 0 (if the image has transparent pixels)",
+    selected = prefs.includeTransparent ~= false,
     enabled = spr ~= nil,
   }
   dlg:button{ id = "ok", text = "&OK", focus = true }
@@ -360,7 +419,12 @@ local function loadCommand()
   end
 
   if data.apply and app.sprite then
-    applyPalette(app.sprite, grid)
+    prefs.order = data.order
+    prefs.includeTransparent = data.transparent
+    applyPalette(app.sprite, grid, {
+      order = data.order,
+      includeTransparent = data.transparent,
+    })
   end
 
   if plugin_.preferences.lastPath ~= grid.path then
