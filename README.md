@@ -28,7 +28,11 @@ Requires Aseprite 1.3 or later.
    - **Left-click** a cell to set the foreground color, **right-click** to set the background color.
    - The current foreground color is marked with a triangle in the top-left corner of its cell and the background color in the bottom-right, like the standard palette. The markers update however the color was picked. When a color appears more than once, only one cell is marked: the one you clicked, or else the first one in reading order.
    - Hover a cell to see its hex value and position. Use **-** / **+** to change the cell size.
-4. **Show/Hide Image Palette** in the same menu toggles the window and reloads the last image (it's read again from disk, so edits to the image show up).
+4. Each open file has its own palette image, like the Preview window has its own view of each file. Switching tabs switches the Image Palette window to that file's palette image. On the Home tab the window is hidden.
+   - A file without a palette image of its own gets the last one you loaded, and keeps it from then on. To give a file a different one, switch to it and load a palette image.
+   - The link to the palette image is saved inside `.aseprite` files, so it comes back the next time you open them. For other formats (like `.png`) it lasts until you close the file.
+   - Each palette image remembers its own cell size.
+5. **Show/Hide Image Palette** in the same menu hides the window for all files, or shows it again. Showing it re-reads the image from disk, so edits to the image show up. Closing the window with its close button also hides it until you show it again.
 
 
 ### Roadmap
@@ -36,7 +40,7 @@ Requires Aseprite 1.3 or later.
 - [x] Adjust the default palette size so that it is only as wide as the current palette area.
 - [x] Load colors in the same order as the default palette
 - [x] Only indicate the first instance of a color as selected (too noisy for loading an image as a palette to show all)
-- [ ] Should we have one palette window per open file?
+- [x] Should we have one palette window per open file?
 - [x] Limit loading images to a reasonable size
 - [x] Include transparent pixels if they exist
 

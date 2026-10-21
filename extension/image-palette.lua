@@ -13,14 +13,23 @@ local MAX_IMAGE_SIZE = 96 -- max width/height (px); larger palettes don't fit th
 local ORDER_READING = "Reading order (left to right, top to bottom)"
 local ORDER_DEFAULT = "Aseprite default (same as Load Palette)"
 
+-- Key for the data this plugin stores on sprites (saved in .aseprite files).
+local PROPERTIES_KEY = "jgabel/image-palette"
+
 local plugin_ -- set in init()
+local siteListener
 local view = {
   grid = nil,       -- { width, height, path, hasTransparent, cells[y][x] = Color or false }
   dlg = nil,
   listeners = {},
   hover = nil,      -- { x, y } of the cell under the mouse
   picked = {},      -- picked.fg / picked.bg = { x, y } of the cell last clicked
+  sprite = nil,     -- the active sprite the view was last updated for
+  busy = false,     -- true while we open/close sprites ourselves
 }
+
+-- Grids already read from disk, by path, so switching tabs doesn't reload.
+local gridCache = {}
 
 -- Helpers ---------------------------------------------------------------------
 
@@ -47,8 +56,10 @@ local function loadGrid(path)
   end
 
   local previous = app.sprite
+  view.busy = true -- opening/closing the image fires sitechange
   local ok, spr = pcall(function() return Sprite{ fromFile = path } end)
   if not ok or not spr then
+    view.busy = false
     return nil, "Could not open image: " .. path
   end
 
@@ -56,6 +67,7 @@ local function loadGrid(path)
     local w, h = spr.width, spr.height
     spr:close()
     if previous then app.sprite = previous end
+    view.busy = false
     return nil, string.format(
       "The image is %dx%d. Palette images can be at most %dx%d pixels.",
       w, h, MAX_IMAGE_SIZE, MAX_IMAGE_SIZE)
@@ -66,6 +78,7 @@ local function loadGrid(path)
   img:drawSprite(spr, 1)
   spr:close()
   if previous then app.sprite = previous end
+  view.busy = false
 
   local pc = app.pixelColor
   local cells = {}
@@ -85,13 +98,20 @@ local function loadGrid(path)
     cells[y + 1] = row
   end
 
-  return {
+  local grid = {
     width = img.width,
     height = img.height,
     path = path,
     hasTransparent = hasTransparent,
     cells = cells,
   }
+  gridCache[path] = grid
+  return grid
+end
+
+local function cachedGrid(path)
+  if gridCache[path] then return gridCache[path] end
+  return loadGrid(path)
 end
 
 -- Unique colors of the grid in reading order (left-to-right, top-to-bottom).
@@ -173,8 +193,15 @@ local function defaultCellSize(grid)
   return math.max(MIN_CELL, size - DEFAULT_SHRINK)
 end
 
+-- Cell size chosen with -/+ for each palette image, by path.
+local function cellSizes()
+  local prefs = plugin_.preferences
+  if type(prefs.cellSizes) ~= "table" then prefs.cellSizes = {} end
+  return prefs.cellSizes
+end
+
 local function cellSize()
-  return plugin_.preferences.cellSize or defaultCellSize(view.grid)
+  return cellSizes()[view.grid.path] or defaultCellSize(view.grid)
 end
 
 -- View ------------------------------------------------------------------------
@@ -332,7 +359,7 @@ local function saveBounds()
 end
 
 local function setCellSize(size)
-  plugin_.preferences.cellSize = math.max(MIN_CELL, math.min(MAX_CELL, size))
+  cellSizes()[view.grid.path] = math.max(MIN_CELL, math.min(MAX_CELL, size))
   openView(view.grid) -- rebuild with the new canvas size, keeping position
 end
 
@@ -356,7 +383,8 @@ openView = function(grid)
   local dlg = Dialog{
     title = "Image Palette: " .. fileName(grid.path),
     onclose = function()
-      if view.dlg then
+      if view.dlg then -- closed by the user, not by us
+        plugin_.preferences.hidden = true
         saveBounds()
         view.dlg = nil
         stopListening()
@@ -410,7 +438,8 @@ local function loadCommand()
     id = "file",
     label = "Image",
     open = true,
-    filename = plugin_.preferences.lastPath or "",
+    filename = (spr and spr.properties(PROPERTIES_KEY).path)
+      or plugin_.preferences.lastPath or "",
     filetypes = { "png", "gif", "bmp", "aseprite", "ase", "jpg", "jpeg", "webp", "tga", "pcx" },
   }
   local prefs = plugin_.preferences
@@ -460,24 +489,60 @@ local function loadCommand()
     })
   end
 
-  if plugin_.preferences.lastPath ~= grid.path then
-    plugin_.preferences.cellSize = nil -- size the new image automatically
+  if app.sprite then
+    app.sprite.properties(PROPERTIES_KEY).path = grid.path
   end
-  plugin_.preferences.lastPath = grid.path
+  prefs.lastPath = grid.path
+  prefs.hidden = false
+  if app.sprite then openView(grid) end
+end
+
+-- The palette image for a sprite. A sprite without one gets the last palette
+-- image loaded, and keeps it from then on.
+local function spritePalettePath(spr)
+  local props = spr.properties(PROPERTIES_KEY)
+  if not props.path and plugin_.preferences.lastPath then
+    props.path = plugin_.preferences.lastPath
+  end
+  return props.path
+end
+
+-- Shows the active sprite's palette, or hides the view on the Home tab.
+local function syncView(reload)
+  local spr = app.sprite
+  view.sprite = spr
+  local path = spr and spritePalettePath(spr)
+  if not path or plugin_.preferences.hidden then
+    closeView()
+    return true
+  end
+  if reload then gridCache[path] = nil end
+  if view.dlg and view.grid.path == path and not reload then return true end
+
+  local grid, err = cachedGrid(path)
+  if not grid then
+    closeView()
+    return false, err
+  end
   openView(grid)
+  return true
+end
+
+local function onSiteChange()
+  if view.busy or app.sprite == view.sprite then return end
+  syncView(false) -- a missing image just leaves the view closed
 end
 
 local function showCommand()
+  local prefs = plugin_.preferences
   if view.dlg then
+    prefs.hidden = true
     closeView()
     return
   end
-  local grid, err = loadGrid(plugin_.preferences.lastPath)
-  if not grid then
-    app.alert(err)
-    return
-  end
-  openView(grid)
+  prefs.hidden = false
+  local ok, err = syncView(true)
+  if not ok then app.alert(err) end
 end
 
 function init(plugin)
@@ -496,11 +561,15 @@ function init(plugin)
     group = "palette_files",
     onclick = showCommand,
     onenabled = function()
-      return view.dlg ~= nil or plugin_.preferences.lastPath ~= nil
+      return view.dlg ~= nil or
+        (app.sprite ~= nil and spritePalettePath(app.sprite) ~= nil)
     end,
   }
+
+  siteListener = app.events:on("sitechange", onSiteChange)
 end
 
 function exit(plugin)
+  if siteListener then app.events:off(siteListener) end
   closeView()
 end
