@@ -7,6 +7,7 @@ local DEFAULT_MAX_VIEW = 320 -- fit the longest side of the grid to this (px)...
 local DEFAULT_SHRINK = 4      -- ...then shrink cells by this, like pressing "-" twice
 local CELL_STEP = 2           -- cell size change per "-" / "+" press
 local MAX_INDEXED_COLORS = 256
+local MAX_IMAGE_SIZE = 96 -- max width/height (px); larger palettes don't fit the view
 
 -- Palette order options when replacing the current palette.
 local ORDER_READING = "Reading order (left to right, top to bottom)"
@@ -18,6 +19,7 @@ local view = {
   dlg = nil,
   listeners = {},
   hover = nil,      -- { x, y } of the cell under the mouse
+  picked = {},      -- picked.fg / picked.bg = { x, y } of the cell last clicked
 }
 
 -- Helpers ---------------------------------------------------------------------
@@ -48,6 +50,15 @@ local function loadGrid(path)
   local ok, spr = pcall(function() return Sprite{ fromFile = path } end)
   if not ok or not spr then
     return nil, "Could not open image: " .. path
+  end
+
+  if spr.width > MAX_IMAGE_SIZE or spr.height > MAX_IMAGE_SIZE then
+    local w, h = spr.width, spr.height
+    spr:close()
+    if previous then app.sprite = previous end
+    return nil, string.format(
+      "The image is %dx%d. Palette images can be at most %dx%d pixels.",
+      w, h, MAX_IMAGE_SIZE, MAX_IMAGE_SIZE)
   end
 
   -- Flatten to RGB so indexed/grayscale images and multiple layers just work.
@@ -206,25 +217,44 @@ local function drawMarker(gc, x, y, cs, color, corner)
   gc:fill()
 end
 
+-- The one cell to mark for a selected color: the cell that was clicked to
+-- pick it, if it still holds that color, otherwise the first cell with that
+-- color in reading order. Marking every duplicate gets too noisy.
+local function markedCell(grid, key, picked)
+  if picked then
+    local row = grid.cells[picked.y]
+    local c = row and row[picked.x]
+    if c and colorKey(c) == key then return picked.x, picked.y end
+  end
+  for y = 1, grid.height do
+    for x = 1, grid.width do
+      local c = grid.cells[y][x]
+      if c and colorKey(c) == key then return x, y end
+    end
+  end
+end
+
 local function paint(ev)
   local gc = ev.context
   local grid = view.grid
   if not grid then return end
   local cs = cellSize()
-  local fgKey = colorKey(app.fgColor)
-  local bgKey = colorKey(app.bgColor)
 
   for y = 1, grid.height do
     for x = 1, grid.width do
       local c = grid.cells[y][x]
       if c then
-        local px, py = (x - 1) * cs, (y - 1) * cs
         gc.color = c
-        gc:fillRect(Rectangle(px, py, cs, cs))
-        local k = colorKey(c)
-        if k == fgKey then drawMarker(gc, px, py, cs, c, "fg") end
-        if k == bgKey then drawMarker(gc, px, py, cs, c, "bg") end
+        gc:fillRect(Rectangle((x - 1) * cs, (y - 1) * cs, cs, cs))
       end
+    end
+  end
+
+  for _, corner in ipairs{ "fg", "bg" } do
+    local color = corner == "fg" and app.fgColor or app.bgColor
+    local x, y = markedCell(grid, colorKey(color), view.picked[corner])
+    if x then
+      drawMarker(gc, (x - 1) * cs, (y - 1) * cs, cs, grid.cells[y][x], corner)
     end
   end
 
@@ -284,8 +314,10 @@ local function onMouseDown(ev)
   -- Copy so the app never holds a reference into our grid.
   local color = Color{ r = c.red, g = c.green, b = c.blue, a = c.alpha }
   if ev.button == MouseButton.RIGHT then
+    view.picked.bg = { x = x, y = y }
     app.bgColor = color
   else
+    view.picked.fg = { x = x, y = y }
     app.fgColor = color
   end
   repaint()
@@ -316,6 +348,7 @@ end
 
 openView = function(grid)
   closeView()
+  if not view.grid or view.grid.path ~= grid.path then view.picked = {} end
   view.grid = grid
   view.hover = nil
 
